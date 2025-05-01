@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Finger Notes + Speech Phrases</title>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tone/build/Tone.js"></script>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background-color: white;
+      transition: background-color 0.5s ease;
+    }
+    video, canvas {
+      position: absolute;
+      left: 0;
+      top: 0;
+      transition: opacity 0.5s ease;
+    }
+    #debug {
+      position: absolute;
+      top: 10px;
+      left: 660px;
+      font-family: sans-serif;
+      background: #f0f0f0;
+      padding: 10px;
+      border-radius: 10px;
+      width: 320px;
+      z-index: 10;
+    }
+    #debug h3 {
+      margin: 0 0 10px;
+    }
+    #debug div {
+      margin-bottom: 8px;
+    }
+    #toggleTrack, #recordPhraseBtn {
+      padding: 6px 12px;
+      font-size: 14px;
+      background: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      margin-top: 5px;
+    }
+    #phraseInput {
+      width: 90%;
+      margin-bottom: 6px;
+    }
+  </style>
+</head>
+<body>
+<video id="video" width="640" height="480" autoplay muted playsinline></video>
+<canvas id="canvas" width="640" height="480"></canvas>
+<div id="debug">
+  <h3>Debug Info</h3>
+  <div>Fingers Up: <span id="fingersCount">-</span></div>
+  <div>Gesture: <span id="gesture">-</span></div>
+  <div>Note Played: <span id="note">-</span></div>
+  <div>Recognized Phrase: <span id="phrase">-</span></div>
+  <div>Video Opacity: <span id="opacityDisplay">1.0</span></div>
+  <div>Background Color: <span id="bgColorDisplay">white</span></div>
+  <input type="text" id="phraseInput" placeholder="New phrase = color or gesture">
+  <button id="recordPhraseBtn">Add Phrase Action</button>
+  <button id="toggleTrack">Start Backing Track</button>
+</div>
+
+<script>
+  let lastGesture = null;
+  let customPhrases = {};
+  let fallbackTimer;
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+
+  const fingersCountEl = document.getElementById('fingersCount');
+  const gestureEl = document.getElementById('gesture');
+  const noteEl = document.getElementById('note');
+  const phraseEl = document.getElementById('phrase');
+  const opacityDisplay = document.getElementById('opacityDisplay');
+  const bgColorDisplay = document.getElementById('bgColorDisplay');
+  const toggleTrackBtn = document.getElementById('toggleTrack');
+  const phraseInput = document.getElementById('phraseInput');
+  const recordPhraseBtn = document.getElementById('recordPhraseBtn');
+
+  const synth = new Tone.Synth().toDestination();
+  const player = new Tone.Player({
+    url: "https://cdn.pixabay.com/download/audio/2022/03/23/audio_a90575ffb4.mp3",
+    loop: true,
+    autostart: false,
+    volume: -5
+  }).toDestination();
+
+  let isPlaying = false;
+
+  toggleTrackBtn.addEventListener("click", async () => {
+    await Tone.start();
+    if (!isPlaying) {
+      player.start();
+      toggleTrackBtn.textContent = "Stop Backing Track";
+      isPlaying = true;
+    } else {
+      player.stop();
+      toggleTrackBtn.textContent = "Start Backing Track";
+      isPlaying = false;
+    }
+  });
+
+  recordPhraseBtn.onclick = () => {
+    const input = phraseInput.value.trim();
+    if (input.includes('=')) {
+      const [phrase, action] = input.split('=').map(s => s.trim().toLowerCase());
+      customPhrases[phrase] = action;
+      alert(`Added phrase: "${phrase}" with action: "${action}"`);
+    }
+  };
+
+  function onlyIndexFingerUp(landmarks) {
+    return landmarks[8].y < landmarks[6].y &&
+            landmarks[12].y > landmarks[10].y &&
+            landmarks[16].y > landmarks[14].y &&
+            landmarks[20].y > landmarks[18].y &&
+            landmarks[4].x > landmarks[3].x;
+  }
+
+  function isThumbAndPinky(landmarks) {
+    return landmarks[4].x < landmarks[3].x &&
+            landmarks[20].y < landmarks[18].y &&
+            landmarks[8].y > landmarks[6].y &&
+            landmarks[12].y > landmarks[10].y &&
+            landmarks[16].y > landmarks[14].y;
+  }
+
+  function countFingers(landmarks) {
+    const fingerTips = [8, 12, 16, 20];
+    let extended = 0;
+    if (landmarks[4].x < landmarks[3].x) extended++;
+    fingerTips.forEach(tip => {
+      if (landmarks[tip].y < landmarks[tip - 2].y) extended++;
+    });
+    return extended;
+  }
+
+  function getGestureName(landmarks, count) {
+    if (onlyIndexFingerUp(landmarks)) return "Index Only";
+    if (isThumbAndPinky(landmarks)) return "Thumb + Pinky";
+    return `${count} finger${count !== 1 ? 's' : ''}`;
+  }
+
+  function playNoteForGesture(landmarks) {
+    const count = countFingers(landmarks);
+    const gesture = getGestureName(landmarks, count);
+    let note = null;
+
+    if (gesture === "Index Only") note = "C4";
+    else if (gesture === "2 fingers") note = "D4";
+    else if (gesture === "3 fingers") note = "E4";
+    else if (gesture === "4 fingers") note = "F4";
+    else if (gesture === "5 fingers") note = "G4";
+    else if (gesture === "Thumb + Pinky") note = "A4";
+
+    if (gesture !== lastGesture && note) {
+      synth.triggerAttackRelease(note, "8n");
+      lastGesture = gesture;
+      fingersCountEl.textContent = count;
+      gestureEl.textContent = gesture;
+      noteEl.textContent = note;
+    } else if (!note) {
+      lastGesture = null;
+      fingersCountEl.textContent = count;
+      gestureEl.textContent = gesture;
+      noteEl.textContent = "-";
+    }
+  }
+
+  function resetVisualsToDefault() {
+    document.body.style.backgroundColor = "white";
+    video.style.opacity = 1.0;
+    opacityDisplay.textContent = "1.0";
+    bgColorDisplay.textContent = "white";
+  }
+
+  const hands = new Hands({
+    locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+  });
+  hands.setOptions({
+    maxNumHands: 1,
+    modelComplexity: 1,
+    minDetectionConfidence: 0.7,
+    minTrackingConfidence: 0.7
+  });
+  hands.onResults(results => {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (results.multiHandLandmarks.length > 0) {
+      const landmarks = results.multiHandLandmarks[0];
+      playNoteForGesture(landmarks);
+      for (let point of landmarks) {
+        ctx.beginPath();
+        ctx.arc(point.x * canvas.width, point.y * canvas.height, 5, 0, 2 * Math.PI);
+        ctx.fillStyle = 'blue';
+        ctx.fill();
+      }
+    }
+  });
+  const camera = new Camera(video, {
+    onFrame: async () => {
+      await hands.send({ image: video });
+    },
+    width: 640,
+    height: 480
+  });
+  camera.start();
+
+  if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.lang = 'en-US';
+
+    recognition.onresult = (event) => {
+      const transcript = event.results[event.results.length - 1][0].transcript.trim().toLowerCase();
+      phraseEl.textContent = transcript;
+
+      if (transcript.includes("scratch can do that")) {
+        document.body.style.backgroundColor = "rgba(255,0,0,0.5)";
+        video.style.opacity = 0.5;
+      } else if (transcript.includes("i don't know")) {
+        document.body.style.backgroundColor = "rgba(0,0,255,0.5)";
+        video.style.opacity = 0.5;
+      } else if (customPhrases[transcript]) {
+        document.body.style.backgroundColor = customPhrases[transcript];
+        video.style.opacity = 0.8;
+      }
+
+      opacityDisplay.textContent = video.style.opacity;
+      bgColorDisplay.textContent = document.body.style.backgroundColor;
+
+      clearTimeout(fallbackTimer);
+      fallbackTimer = setTimeout(resetVisualsToDefault, 10000);
+    };
+
+    recognition.onerror = event => {
+      console.warn("Speech recognition error:", event.error);
+    };
+    recognition.start();
+  } else {
+    phraseEl.innerHTML = "<span style='color:red;'>Speech API not supported</span><br><small>(iOS Safari may have limited support)</small>";
+    opacityDisplay.textContent = "n/a";
+    bgColorDisplay.textContent = "n/a";
+  }
+
+  // === Microphone waveform display ===
+  navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const analyser = audioContext.createAnalyser();
+    const mic = audioContext.createMediaStreamSource(stream);
+    mic.connect(analyser);
+    analyser.fftSize = 256;
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+    function drawWaveform() {
+      requestAnimationFrame(drawWaveform);
+      analyser.getByteTimeDomainData(dataArray);
+      ctx.beginPath();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'lime';
+      const sliceWidth = canvas.width / dataArray.length;
+      let x = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        const v = dataArray[i] / 128.0;
+        const y = v * canvas.height / 2;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+        x += sliceWidth;
+      }
+      ctx.lineTo(canvas.width, canvas.height / 2);
+      ctx.stroke();
+    }
+    drawWaveform();
+  });
+</script>
+</body>
+</html>
