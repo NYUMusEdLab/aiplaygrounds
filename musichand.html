@@ -104,6 +104,8 @@
     function getGestureName(landmarks, count) {
         if (onlyIndexFingerUp(landmarks)) return "Index Only";
         if (isThumbAndPinky(landmarks)) return "Thumb + Pinky";
+        if (isThumbAndIndex(landmarks)) return "Thumb + Index";
+        if (isThumbIndexMiddle(landmarks)) return "Thumb + Index + Middle";
         return `${count} finger${count !== 1 ? 's' : ''}`;
     }
 
@@ -123,6 +125,26 @@
         const isMiddleDown = landmarks[12].y > landmarks[10].y;
         const isRingDown = landmarks[16].y > landmarks[14].y;
         return isThumbUp && isPinkyUp && isIndexDown && isMiddleDown && isRingDown;
+    }
+
+    function isThumbAndIndex(landmarks) {
+        const isThumbUp = landmarks[4].x < landmarks[3].x; // thumb pointing outward (assuming right hand)
+        const isIndexUp = landmarks[8].y < landmarks[6].y; // index finger pointing up
+        const isMiddleDown = landmarks[12].y > landmarks[10].y;
+        const isRingDown = landmarks[16].y > landmarks[14].y;
+        const isPinkyDown = landmarks[20].y > landmarks[18].y;
+
+        return isThumbUp && isIndexUp && isMiddleDown && isRingDown && isPinkyDown;
+    }
+
+    function isThumbIndexMiddle(landmarks) {
+        const isThumbUp = landmarks[4].x < landmarks[3].x;
+        const isIndexUp = landmarks[8].y < landmarks[6].y;
+        const isMiddleUp = landmarks[12].y < landmarks[10].y;
+        const isRingDown = landmarks[16].y > landmarks[14].y;
+        const isPinkyDown = landmarks[20].y > landmarks[18].y;
+
+        return isThumbUp && isIndexUp && isMiddleUp && isRingDown && isPinkyDown;
     }
 
     function countFingers(landmarks) {
@@ -146,6 +168,8 @@
         else if (gesture === "4 fingers") note = "F4";
         else if (gesture === "5 fingers") note = "G4";
         else if (gesture === "Thumb + Pinky") note = "A4";
+        else if (gesture === "Thumb + Index") note = "B4";
+        else if (gesture === "Thumb + Index + Middle") note = "C5";
 
         if (gesture !== lastGesture && note) {
             synth.triggerAttackRelease(note, "8n");
